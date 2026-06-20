@@ -74,9 +74,9 @@ export default function Login() {
           <div style={{
             width: 64, height: 64, background: '#0057D9', borderRadius: '50%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'Poppins,sans-serif', fontWeight: 900, fontSize: 28,
+            fontFamily: 'Poppins,sans-serif', fontWeight: 900, fontSize: 22,
             color: '#FFD600', margin: '0 auto 16px',
-          }}>A</div>
+          }}>Alas</div>
           <h1 style={{ fontFamily: 'Poppins,sans-serif', fontSize: 22,
             fontWeight: 800, color: '#0057D9', marginBottom: 4 }}>
             ATLAS Admin Panel

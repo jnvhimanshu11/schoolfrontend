@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { admissionApi } from '../services/api';
+import { admissionApi } from '../../services/api';
 
 const PROGRAMS = [
   'Nursery', 'LKG', 'UKG', 'Day Care',

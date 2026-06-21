@@ -42,7 +42,7 @@ export default function Login() {
 
   // ---- 3D tilt for the card, following the cursor -------------------------
   const cardRef = useRef(null);
-  const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
+  const [tilt, setTilt] = useState({ rx: 0, ry: 0, px: 0.5, py: 0.5 });
   const reduceMotion = useRef(
     typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -53,16 +53,24 @@ export default function Login() {
     const rect = cardRef.current.getBoundingClientRect();
     const px = (e.clientX - rect.left) / rect.width; // 0..1
     const py = (e.clientY - rect.top) / rect.height; // 0..1
-    const maxTilt = 6; // degrees, kept subtle on purpose
+    const maxTilt = 11; // degrees - real parallax needs more swing than a hint of tilt
     setTilt({
       ry: (px - 0.5) * maxTilt * 2,
       rx: -(py - 0.5) * maxTilt * 2,
+      px,
+      py,
     });
   }, []);
 
   const handlePointerLeave = useCallback(() => {
-    setTilt({ rx: 0, ry: 0 });
+    setTilt({ rx: 0, ry: 0, px: 0.5, py: 0.5 });
   }, []);
+
+  // how far each layer drifts opposite/with the cursor, in px - bigger
+  // number = layer reads as "closer" to the viewer (parallax depth)
+  const layerOffset = (depth) => ({
+    transform: `translate3d(${(tilt.px - 0.5) * depth}px, ${(tilt.py - 0.5) * depth}px, ${depth}px)`,
+  });
 
   // ---- OTP key handling -----------------------------------------------------
   const focusBox = (i) => otpRefs.current[i]?.focus();
@@ -187,7 +195,7 @@ export default function Login() {
         onMouseLeave={handlePointerLeave}
         style={{
           ...styles.cardWrap,
-          perspective: 1400,
+          perspective: 900,
         }}
       >
         <div
@@ -204,8 +212,8 @@ export default function Login() {
           {unlocked ? (
             <UnlockedPanel email={email} />
           ) : (
-            <>
-              <Header step={step} email={email} />
+            <div style={{ ...layerOffset(14), transformStyle: 'preserve-3d' }}>
+              <Header step={step} email={email} logoDepth={layerOffset} />
 
               {error && <Banner tone="error">{error}</Banner>}
               {info && !error && <Banner tone="success">{info}</Banner>}
@@ -287,7 +295,7 @@ export default function Login() {
               <p style={styles.footer}>
                 Developed by <strong style={{ color: '#0057D9' }}>Himanshu Soni</strong> | 9548190094
               </p>
-            </>
+            </div>
           )}
         </div>
 
@@ -308,10 +316,45 @@ export default function Login() {
 // Subcomponents
 // ---------------------------------------------------------------------------
 
-function Header({ step, email }) {
+function Header({ step, email, logoDepth }) {
+  const [logoHover, setLogoHover] = useState(false);
+
   return (
     <div style={styles.headerWrap}>
-      <div style={styles.logoBadge}>Alas</div>
+      <div
+        style={{ position: 'relative', display: 'inline-block', ...logoDepth(26) }}
+        onMouseEnter={() => setLogoHover(true)}
+        onMouseLeave={() => setLogoHover(false)}
+      >
+        <div
+          style={{
+            ...styles.logoBadge,
+            transform: logoHover ? 'translateY(-3px) scale(1.06)' : 'translateY(0) scale(1)',
+            boxShadow: logoHover
+              ? '0 18px 30px rgba(0,87,217,.5)'
+              : '0 10px 20px rgba(0,87,217,.35)',
+          }}
+        >
+          Alas
+        </div>
+
+        <div
+          role="tooltip"
+          style={{
+            ...styles.logoPopup,
+            opacity: logoHover ? 1 : 0,
+            transform: logoHover
+              ? 'translate(-50%, 0) scale(1)'
+              : 'translate(-50%, 6px) scale(.94)',
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={styles.logoPopupTitle}>ATLAS Playschool &amp; Academy</div>
+          <div style={styles.logoPopupSub}>Secure admin access · verified domain</div>
+          <div style={styles.logoPopupArrow} />
+        </div>
+      </div>
+
       <h1 style={styles.title}>ATLAS Admin Panel</h1>
       <p style={styles.subtitle}>
         {step === 1
@@ -353,12 +396,33 @@ function FieldError({ text }) {
 function OtpKey({ index, value, hasError, disabled, innerRef, onChange, onKeyDown }) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [justFilled, setJustFilled] = useState(false);
+  const prevValue = useRef(value);
+
+  useEffect(() => {
+    if (value && !prevValue.current) {
+      // digit just landed - trigger a brief 3D "pop" so each keystroke
+      // visibly registers, not just a flat color change
+      setJustFilled(true);
+      const t = setTimeout(() => setJustFilled(false), 220);
+      prevValue.current = value;
+      return () => clearTimeout(t);
+    }
+    prevValue.current = value;
+  }, [value]);
 
   // Each digit behaves like a physical key: rests slightly "up", lifts
-  // further on hover, and presses down (translateY positive + shrink)
-  // while focused/being typed into.
-  const lift = focused ? 2 : hover ? -4 : 0;
-  const scale = focused ? 0.97 : hover ? 1.04 : 1;
+  // further on hover, presses down while focused, and pops toward the
+  // viewer for an instant when a digit actually lands.
+  let translateY = focused ? 2 : hover ? -6 : 0;
+  let scale = focused ? 0.96 : hover ? 1.07 : 1;
+  let rotateX = hover && !focused ? -8 : 0;
+
+  if (justFilled) {
+    translateY = -10;
+    scale = 1.16;
+    rotateX = 14;
+  }
 
   return (
     <input
@@ -383,17 +447,22 @@ function OtpKey({ index, value, hasError, disabled, innerRef, onChange, onKeyDow
         fontFamily: 'Nunito, sans-serif',
         color: '#1E293B',
         borderRadius: 12,
-        border: `2px solid ${hasError ? '#EF4444' : focused ? '#0057D9' : '#E2E8F0'}`,
+        border: `2px solid ${hasError ? '#EF4444' : focused ? '#0057D9' : justFilled ? '#0057D9' : '#E2E8F0'}`,
         outline: 'none',
         background: '#fff',
         boxSizing: 'border-box',
-        transform: `translateY(${lift}px) scale(${scale})`,
-        boxShadow: focused
-          ? '0 2px 4px rgba(0,87,217,.25)'
-          : hover
-            ? '0 10px 18px rgba(15,23,42,.16)'
-            : '0 3px 8px rgba(15,23,42,.08)',
-        transition: 'transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s ease, border-color .15s ease',
+        transformStyle: 'preserve-3d',
+        transform: `perspective(300px) translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`,
+        boxShadow: justFilled
+          ? '0 18px 26px rgba(0,87,217,.38)'
+          : focused
+            ? '0 2px 4px rgba(0,87,217,.25)'
+            : hover
+              ? '0 14px 22px rgba(15,23,42,.2)'
+              : '0 3px 8px rgba(15,23,42,.08)',
+        transition: justFilled
+          ? 'transform .22s cubic-bezier(.34,1.76,.64,1), box-shadow .22s ease, border-color .15s ease'
+          : 'transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s ease, border-color .15s ease',
       }}
     />
   );
@@ -524,7 +593,7 @@ const styles = {
     transition: 'transform .15s ease-out, opacity .3s ease',
     zIndex: -1,
   },
-  headerWrap: { textAlign: 'center', marginBottom: 32 },
+  headerWrap: { textAlign: 'center', marginBottom: 32, position: 'relative' },
   logoBadge: {
     width: 64,
     height: 64,
@@ -539,6 +608,42 @@ const styles = {
     color: '#FFD600',
     margin: '0 auto 16px',
     boxShadow: '0 10px 20px rgba(0,87,217,.35)',
+    transition: 'transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease',
+    cursor: 'default',
+  },
+  logoPopup: {
+    position: 'absolute',
+    top: '100%',
+    left: '50%',
+    marginTop: 10,
+    width: 220,
+    background: '#0F172A',
+    borderRadius: 12,
+    padding: '12px 14px',
+    boxShadow: '0 18px 36px rgba(0,8,30,.4)',
+    transition: 'opacity .18s ease, transform .18s cubic-bezier(.34,1.56,.64,1)',
+    zIndex: 5,
+  },
+  logoPopupTitle: {
+    color: '#fff',
+    fontSize: 12.5,
+    fontWeight: 700,
+    fontFamily: 'Nunito, sans-serif',
+    marginBottom: 3,
+  },
+  logoPopupSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'Nunito, sans-serif',
+  },
+  logoPopupArrow: {
+    position: 'absolute',
+    top: -5,
+    left: '50%',
+    transform: 'translateX(-50%) rotate(45deg)',
+    width: 10,
+    height: 10,
+    background: '#0F172A',
   },
   title: {
     fontFamily: 'Poppins, sans-serif',
